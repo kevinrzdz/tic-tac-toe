@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <h1>Tic-Tac-Toe vs. AI</h1>
+
+    <div id="game-setup" class="game-setup">
+        <h2>Choose Your Player</h2>
+        <button id="play-x" class="player-btn">Play as X (First)</button>
+        <button id="play-o" class="player-btn">Play as O (Second)</button>
+    </div>
+
+    <div id="game-area" class="game-area hidden">
+        <div id="game-status" class="game-status"></div>
+
+        <div id="game-board" class="game-board">
+            <div class="cell" data-row="0" data-col="0"></div>
+            <div class="cell" data-row="0" data-col="1"></div>
+            <div class="cell" data-row="0" data-col="2"></div>
+            <div class="cell" data-row="1" data-col="0"></div>
+            <div class="cell" data-row="1" data-col="1"></div>
+            <div class="cell" data-row="1" data-col="2"></div>
+            <div class="cell" data-row="2" data-col="0"></div>
+            <div class="cell" data-row="2" data-col="1"></div>
+            <div class="cell" data-row="2" data-col="2"></div>
+        </div>
+
+        <button id="new-game-btn" class="new-game-btn">New Game</button>
+    </div>
+</div>
+
+<script>
+    class TicTacToeGame {
+        constructor() {
+            this.gameState = null;
+            this.userPlayer = null;
+            this.initializeEventListeners();
+        }
+
+        initializeEventListeners() {
+            document.getElementById('play-x').addEventListener('click', () => this.startGame('X'));
+            document.getElementById('play-o').addEventListener('click', () => this.startGame('O'));
+            document.getElementById('new-game-btn').addEventListener('click', () => this.showSetup());
+
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.addEventListener('click', (e) => this.handleCellClick(e));
+            });
+        }
+
+        async startGame(player) {
+            try {
+                const response = await fetch('/new_game', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({player: player})
+                });
+
+                if (response.ok) {
+                    this.gameState = await response.json();
+                    this.userPlayer = player;
+                    this.showGame();
+                    this.updateDisplay();
+                }
+            } catch (error) {
+                console.error('Error starting game:', error);
+            }
+        }
+
+        async handleCellClick(event) {
+            const cell = event.target;
+            const row = parseInt(cell.dataset.row);
+            const col = parseInt(cell.dataset.col);
+
+            if (this.gameState.game_over || this.gameState.board[row][col] !== null) {
+                return;
+            }
+
+            if (this.gameState.current_player !== this.userPlayer) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/make_move', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({row: row, col: col})
+                });
+
+                if (response.ok) {
+                    this.gameState = await response.json();
+                    this.updateDisplay();
+                } else {
+                    const error = await response.json();
+                    console.error('Move error:', error.error);
+                }
+            } catch (error) {
+                console.error('Error making move:', error);
+            }
+        }
+
+        updateDisplay() {
+            document.querySelectorAll('.cell').forEach((cell, index) => {
+                const row = Math.floor(index / 3);
+                const col = index % 3;
+                const value = this.gameState.board[row][col];
+
+                cell.textContent = value || '';
+                cell.className = 'cell';
+
+                if (value === 'X') {
+                    cell.classList.add('x');
+                } else if (value === 'O') {
+                    cell.classList.add('o');
+                }
+
+                if (value || this.gameState.game_over) {
+                    cell.classList.add('disabled');
+                }
+            });
+
+            const statusElement = document.getElementById('game-status');
+            if (this.gameState.game_over) {
+                if (this.gameState.winner === null) {
+                    statusElement.textContent = "It's a tie!";
+                    statusElement.className = 'game-status tie';
+                } else if (this.gameState.winner === this.userPlayer) {
+                    statusElement.textContent = "You win!";
+                    statusElement.className = 'game-status win';
+                } else {
+                    statusElement.textContent = "AI wins!";
+                    statusElement.className = 'game-status lose';
+                }
+            } else {
+                if (this.gameState.current_player === this.userPlayer) {
+                    statusElement.textContent = "Your turn";
+                    statusElement.className = 'game-status your-turn';
+                } else {
+                    statusElement.textContent = "AI is thinking...";
+                    statusElement.className = 'game-status ai-turn';
+                }
+            }
+        }
+
+        showSetup() {
+            document.getElementById('game-setup').classList.remove('hidden');
+            document.getElementById('game-area').classList.add('hidden');
+        }
+
+        showGame() {
+            document.getElementById('game-setup').classList.add('hidden');
+            document.getElementById('game-area').classList.remove('hidden');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        new TicTacToeGame();
+    });
+</script>
+</body>
+</html>
