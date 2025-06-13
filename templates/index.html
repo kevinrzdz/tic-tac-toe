@@ -7,17 +7,42 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+<div class="floating-particles" id="particles"></div>
+
 <div class="container">
-    <h1>Tic-Tac-Toe vs. AI</h1>
+    <h1>🎮 Tic-Tac-Toe vs. AI</h1>
+
+    <div class="stats-container">
+        <div class="stat-item">
+            <div class="stat-number" id="wins">0</div>
+            <div class="stat-label">Wins</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="losses">0</div>
+            <div class="stat-label">Losses</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="ties">0</div>
+            <div class="stat-label">Ties</div>
+        </div>
+    </div>
 
     <div id="game-setup" class="game-setup">
-        <h2>Choose Your Player</h2>
-        <button id="play-x" class="player-btn">Play as X (First)</button>
-        <button id="play-o" class="player-btn">Play as O (Second)</button>
+        <h2>⚙️ Choose Your Player</h2>
+        <button id="play-x" class="player-btn">🔴 Play as X (First)</button>
+        <button id="play-o" class="player-btn">🔵 Play as O (Second)</button>
     </div>
 
     <div id="game-area" class="game-area hidden">
         <div id="game-status" class="game-status"></div>
+
+        <div class="timer" id="timer">
+            <svg class="timer-icon" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12,6 12,12 16,14"/>
+            </svg>
+            <span id="time-display">00:00</span>
+        </div>
 
         <div id="game-board" class="game-board">
             <div class="cell" data-row="0" data-col="0"></div>
@@ -31,7 +56,15 @@
             <div class="cell" data-row="2" data-col="2"></div>
         </div>
 
-        <button id="new-game-btn" class="new-game-btn">New Game</button>
+        <div class="controls">
+            <button id="new-game-btn" class="btn">🔄 New Game</button>
+            <button id="toggle-history" class="btn secondary">📋 History</button>
+        </div>
+
+        <div id="move-history" class="move-history hidden">
+            <h3>📝 Move History</h3>
+            <div id="history-content"></div>
+        </div>
     </div>
 </div>
 
@@ -40,17 +73,71 @@
         constructor() {
             this.gameState = null;
             this.userPlayer = null;
+            this.startTime = null;
+            this.gameTimer = null;
+            this.moveHistory = [];
+            this.lastMove = null;
+            this.stats = this.loadStats();
+
             this.initializeEventListeners();
+            this.updateStatsDisplay();
+            this.createParticles();
         }
 
         initializeEventListeners() {
             document.getElementById('play-x').addEventListener('click', () => this.startGame('X'));
             document.getElementById('play-o').addEventListener('click', () => this.startGame('O'));
             document.getElementById('new-game-btn').addEventListener('click', () => this.showSetup());
+            document.getElementById('toggle-history').addEventListener('click', () => this.toggleHistory());
 
             document.querySelectorAll('.cell').forEach(cell => {
                 cell.addEventListener('click', (e) => this.handleCellClick(e));
             });
+        }
+
+        createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            for (let i = 0; i < 50; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 20 + 's';
+                particle.style.animationDuration = (Math.random() * 10 + 15) + 's';
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        loadStats() {
+            const saved = localStorage.getItem('tictactoe-stats');
+            return saved ? JSON.parse(saved) : {wins: 0, losses: 0, ties: 0};
+        }
+
+        saveStats() {
+            localStorage.setItem('tictactoe-stats', JSON.stringify(this.stats));
+            this.updateStatsDisplay();
+        }
+
+        updateStatsDisplay() {
+            document.getElementById('wins').textContent = this.stats.wins;
+            document.getElementById('losses').textContent = this.stats.losses;
+            document.getElementById('ties').textContent = this.stats.ties;
+        }
+
+        startTimer() {
+            this.startTime = Date.now();
+            this.gameTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const seconds = (elapsed % 60).toString().padStart(2, '0');
+                document.getElementById('time-display').textContent = `${minutes}:${seconds}`;
+            }, 1000);
+        }
+
+        stopTimer() {
+            if (this.gameTimer) {
+                clearInterval(this.gameTimer);
+                this.gameTimer = null;
+            }
         }
 
         async startGame(player) {
@@ -64,8 +151,12 @@
                 if (response.ok) {
                     this.gameState = await response.json();
                     this.userPlayer = player;
+                    this.moveHistory = [];
+                    this.lastMove = null;
                     this.showGame();
                     this.updateDisplay();
+                    this.startTimer();
+                    this.updateHistoryDisplay();
                 }
             } catch (error) {
                 console.error('Error starting game:', error);
@@ -94,7 +185,21 @@
 
                 if (response.ok) {
                     this.gameState = await response.json();
+
+                    this.addToHistory(`You (${this.userPlayer})`, row, col);
+                    if (this.gameState.ai_move) {
+                        const aiPlayer = this.userPlayer === 'X' ? 'O' : 'X';
+                        this.addToHistory(`AI (${aiPlayer})`, this.gameState.ai_move[0], this.gameState.ai_move[1]);
+                    }
+
+                    this.lastMove = this.gameState.ai_move || this.gameState.user_move;
                     this.updateDisplay();
+                    this.updateHistoryDisplay();
+
+                    if (this.gameState.game_over) {
+                        this.stopTimer();
+                        this.updateGameStats();
+                    }
                 } else {
                     const error = await response.json();
                     console.error('Move error:', error.error);
@@ -102,6 +207,17 @@
             } catch (error) {
                 console.error('Error making move:', error);
             }
+        }
+
+        updateGameStats() {
+            if (this.gameState.winner === null) {
+                this.stats.ties++;
+            } else if (this.gameState.winner === this.userPlayer) {
+                this.stats.wins++;
+            } else {
+                this.stats.losses++;
+            }
+            this.saveStats();
         }
 
         updateDisplay() {
@@ -122,34 +238,70 @@
                 if (value || this.gameState.game_over) {
                     cell.classList.add('disabled');
                 }
+
+                if (this.lastMove && this.lastMove[0] === row && this.lastMove[1] === col) {
+                    cell.classList.add('last-move');
+                }
             });
 
             const statusElement = document.getElementById('game-status');
             if (this.gameState.game_over) {
                 if (this.gameState.winner === null) {
-                    statusElement.textContent = "It's a tie!";
+                    statusElement.textContent = "🤝 It's a tie!";
                     statusElement.className = 'game-status tie';
                 } else if (this.gameState.winner === this.userPlayer) {
-                    statusElement.textContent = "You win!";
+                    statusElement.textContent = "🎉 You win!";
                     statusElement.className = 'game-status win';
                 } else {
-                    statusElement.textContent = "AI wins!";
+                    statusElement.textContent = "🤖 AI wins!";
                     statusElement.className = 'game-status lose';
                 }
             } else {
                 if (this.gameState.current_player === this.userPlayer) {
-                    statusElement.textContent = "Your turn";
+                    statusElement.textContent = "🎯 Your turn";
                     statusElement.className = 'game-status your-turn';
                 } else {
-                    statusElement.textContent = "AI is thinking...";
+                    statusElement.textContent = "🤔 AI is thinking...";
                     statusElement.className = 'game-status ai-turn';
                 }
             }
         }
 
+        addToHistory(player, row, col) {
+            this.moveHistory.push({
+                player,
+                row,
+                col,
+                timestamp: new Date()
+            });
+        }
+
+        updateHistoryDisplay() {
+            const historyContent = document.getElementById('history-content');
+            historyContent.innerHTML = '';
+
+            this.moveHistory.forEach((move, index) => {
+                const moveItem = document.createElement('div');
+                moveItem.className = 'move-item';
+                moveItem.innerHTML = `
+                        <strong>Move ${index + 1}:</strong>
+                        ${move.player} at (${move.row + 1}, ${move.col + 1})
+                    `;
+                historyContent.appendChild(moveItem);
+            });
+
+            historyContent.scrollTop = historyContent.scrollHeight;
+        }
+
+        toggleHistory() {
+            const historyElement = document.getElementById('move-history');
+            historyElement.classList.toggle('hidden');
+        }
+
         showSetup() {
             document.getElementById('game-setup').classList.remove('hidden');
             document.getElementById('game-area').classList.add('hidden');
+            this.stopTimer();
         }
 
         showGame() {
